@@ -142,14 +142,10 @@ static int read_key(const AppConfig *config, DoorTransport *transport, InputDeco
     result = transport_read(transport, bytes, sizeof(bytes), &length, timeout_ms);
     if (result == TRANSPORT_TIMEOUT) {
         key = input_decoder_timeout(decoder);
-        if (key != INPUT_NONE) {
-            char event[64];
-            snprintf(event, sizeof(event), "decoded_key: %s", key_name(key));
-            debug_event(config, event);
-        }
         return key;
     }
     if (result == TRANSPORT_WOULD_BLOCK) {
+        debug_event(config, "poll readable");
         debug_event(config, "recv: EAGAIN after poll");
         return input_decoder_timeout(decoder);
     }
@@ -159,16 +155,13 @@ static int read_key(const AppConfig *config, DoorTransport *transport, InputDeco
     }
     {
         char event[64];
+        debug_event(config, "poll readable");
         snprintf(event, sizeof(event), "recv: %lu bytes", (unsigned long)length);
         debug_event(config, event);
     }
     debug_bytes(config, bytes, length);
+    debug_event(config, "decoder feed");
     key = input_decoder_feed(decoder, bytes, length);
-    if (key != INPUT_NONE) {
-        char event[64];
-        snprintf(event, sizeof(event), "decoded_key: %s", key_name(key));
-        debug_event(config, event);
-    }
     return key;
 }
 
@@ -208,6 +201,7 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
     double deadline = 0.0;
     int exit_code = 0;
     int disconnected = 0;
+    unsigned long iteration = 0;
     void (*old_int)(int);
     void (*old_term)(int);
 #ifdef SIGHUP
@@ -239,6 +233,12 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
              have_good ? "OK" : "NO DATA");
     state.charset = config->charset;
     while (running) {
+        {
+            char event[64];
+            ++iteration;
+            snprintf(event, sizeof(event), "iteration=%lu", iteration);
+            debug_event(config, event);
+        }
         now = monotonic_seconds();
         if (stop_requested || (deadline > 0.0 && now >= deadline)) {
             if (deadline > 0.0 && now >= deadline) exit_code = 15;
@@ -280,36 +280,43 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
             has_previous = 1;
             {
                 int key = read_key(config, transport, &decoder, 100);
-                if (key != INPUT_NONE) {
+                while (key != INPUT_NONE) {
                     char key_event[32];
+                    if (key != INPUT_DISCONNECT) {
+                        char decoded_event[64];
+                        snprintf(decoded_event, sizeof(decoded_event), "decoded='%s'", key_name(key));
+                        debug_event(config, decoded_event);
+                    }
                     snprintf(key_event, sizeof(key_event), "action: %s", action_name(key));
                     debug_event(config, key_event);
-                }
-                switch (key) {
-                case INPUT_QUIT: running = 0; break;
-                case INPUT_DISCONNECT: debug_event(config, "read_eof"); disconnected = 1; exit_code = 14; running = 0; break;
-                case INPUT_UP: if (state.selected > 0) --state.selected; break;
-                case INPUT_DOWN: if (state.selected + 1 < aircraft.count) ++state.selected; break;
-                case INPUT_J: if (state.selected + 1 < aircraft.count) ++state.selected; break;
-                case INPUT_K: if (state.selected > 0) --state.selected; break;
-                case INPUT_PLUS: state.range_nm = state.range_nm > 5.0 ? state.range_nm / 2.0 : 5.0; break;
-                case INPUT_MINUS: state.range_nm = state.range_nm < 500.0 ? state.range_nm * 2.0 : 500.0; break;
-                case INPUT_TAB: state.sort_mode = (state.sort_mode + 1) % 3; break;
-                case INPUT_SPACE: break; /* radar is always centered on receiver */
-                case INPUT_LIST: state.list_mode = !state.list_mode; break;
-                case INPUT_HELP: help = !help; break;
-                case INPUT_QUESTION: help = !help; break;
-                case INPUT_ENTER: details = 1; break;
-                case INPUT_ESCAPE: details = 0; help = 0; break;
-                case INPUT_G: state.show_ground = !state.show_ground; break;
-                case INPUT_S: state.sort_mode = (state.sort_mode + 1) % 3; break;
-                case INPUT_P: paused = !paused; break;
-                case INPUT_R: next_poll = 0.0; break;
-                case 101: state.range_nm = 25.0; break;
-                case 102: state.range_nm = 50.0; break;
-                case 103: state.range_nm = 100.0; break;
-                case 104: state.range_nm = 200.0; break;
-                default: break;
+                    switch (key) {
+                    case INPUT_QUIT: running = 0; break;
+                    case INPUT_DISCONNECT: debug_event(config, "read_eof"); disconnected = 1; exit_code = 14; running = 0; break;
+                    case INPUT_UP: if (state.selected > 0) --state.selected; break;
+                    case INPUT_DOWN: if (state.selected + 1 < aircraft.count) ++state.selected; break;
+                    case INPUT_J: if (state.selected + 1 < aircraft.count) ++state.selected; break;
+                    case INPUT_K: if (state.selected > 0) --state.selected; break;
+                    case INPUT_PLUS: state.range_nm = state.range_nm > 5.0 ? state.range_nm / 2.0 : 5.0; break;
+                    case INPUT_MINUS: state.range_nm = state.range_nm < 500.0 ? state.range_nm * 2.0 : 500.0; break;
+                    case INPUT_TAB: state.sort_mode = (state.sort_mode + 1) % 3; break;
+                    case INPUT_SPACE: break; /* radar is always centered on receiver */
+                    case INPUT_LIST: state.list_mode = !state.list_mode; break;
+                    case INPUT_HELP: help = !help; break;
+                    case INPUT_QUESTION: help = !help; break;
+                    case INPUT_ENTER: details = 1; break;
+                    case INPUT_ESCAPE: details = 0; help = 0; break;
+                    case INPUT_G: state.show_ground = !state.show_ground; break;
+                    case INPUT_S: state.sort_mode = (state.sort_mode + 1) % 3; break;
+                    case INPUT_P: paused = !paused; break;
+                    case INPUT_R: next_poll = 0.0; break;
+                    case 101: state.range_nm = 25.0; break;
+                    case 102: state.range_nm = 50.0; break;
+                    case 103: state.range_nm = 100.0; break;
+                    case 104: state.range_nm = 200.0; break;
+                    default: break;
+                    }
+                    if (!running) break;
+                    key = input_decoder_next(&decoder);
                 }
             }
         }

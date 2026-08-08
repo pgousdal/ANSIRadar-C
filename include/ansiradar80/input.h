@@ -32,11 +32,15 @@ typedef struct {
     unsigned char bytes[64];
     size_t length;
     unsigned int idle_ticks;
+    int keys[64];
+    size_t key_head;
+    size_t key_count;
 } InputDecoder;
 
 void input_decoder_init(InputDecoder *decoder);
 int input_decoder_feed(InputDecoder *decoder, const unsigned char *bytes,
                        size_t length);
+int input_decoder_next(InputDecoder *decoder);
 int input_decoder_flush(InputDecoder *decoder);
 int input_decoder_timeout(InputDecoder *decoder);
 

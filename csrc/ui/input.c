@@ -11,6 +11,25 @@ static void drop_bytes(InputDecoder *decoder, size_t count) {
     decoder->length -= count;
 }
 
+static void queue_key(InputDecoder *decoder, int key) {
+    size_t index;
+    if (key == INPUT_NONE || decoder->key_count >= sizeof(decoder->keys) / sizeof(decoder->keys[0])) return;
+    index = (decoder->key_head + decoder->key_count) %
+            (sizeof(decoder->keys) / sizeof(decoder->keys[0]));
+    decoder->keys[index] = key;
+    ++decoder->key_count;
+}
+
+int input_decoder_next(InputDecoder *decoder) {
+    int key;
+    if (decoder == NULL || decoder->key_count == 0) return INPUT_NONE;
+    key = decoder->keys[decoder->key_head];
+    decoder->key_head = (decoder->key_head + 1) %
+                        (sizeof(decoder->keys) / sizeof(decoder->keys[0]));
+    --decoder->key_count;
+    return key;
+}
+
 void input_decoder_init(InputDecoder *decoder) {
     if (decoder != NULL) {
         memset(decoder, 0, sizeof(*decoder));
@@ -95,21 +114,32 @@ int input_decoder_feed(InputDecoder *decoder, const unsigned char *bytes, size_t
         decoder->length += copy;
         decoder->idle_ticks = 0;
     }
-    key = parse_key(decoder);
-    return key;
+    while (decoder->length > 0) {
+        size_t before = decoder->length;
+        key = parse_key(decoder);
+        queue_key(decoder, key);
+        if (decoder->length == before) break;
+    }
+    return input_decoder_next(decoder);
 }
 
 int input_decoder_flush(InputDecoder *decoder) {
-    if (decoder == NULL || decoder->length == 0) return INPUT_NONE;
-    if (decoder->bytes[0] == 27) {
+    if (decoder == NULL) return INPUT_NONE;
+    if (decoder->length > 0 && decoder->bytes[0] == 27) {
         decoder->length = 0;
-        return INPUT_ESCAPE;
+        queue_key(decoder, INPUT_ESCAPE);
     }
-    return parse_key(decoder);
+    while (decoder->length > 0) {
+        size_t before = decoder->length;
+        queue_key(decoder, parse_key(decoder));
+        if (decoder->length == before) break;
+    }
+    return input_decoder_next(decoder);
 }
 
 int input_decoder_timeout(InputDecoder *decoder) {
     if (decoder == NULL) return INPUT_NONE;
+    if (decoder->key_count > 0) return input_decoder_next(decoder);
     if (decoder->length == 0) return INPUT_NONE;
     ++decoder->idle_ticks;
     if (decoder->idle_ticks < 2U) return INPUT_NONE;

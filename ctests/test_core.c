@@ -73,9 +73,8 @@ int main(int argc, char **argv) {
     assert(input_decoder_feed(&decoder, (const unsigned char *)"[", 1) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"A", 1) == INPUT_UP);
     input_decoder_init(&decoder);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"xx1", 3) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"xx1", 3) == 101);
     assert(input_decoder_feed(&decoder, NULL, 0) == INPUT_NONE);
-    assert(input_decoder_feed(&decoder, NULL, 0) == 101);
     input_decoder_init(&decoder);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"\033", 1) == INPUT_NONE);
     assert(input_decoder_timeout(&decoder) == INPUT_NONE);

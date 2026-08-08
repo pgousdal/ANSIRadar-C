@@ -188,6 +188,24 @@ static void test_input(void) {
     assert(input_decoder_feed(&decoder, NULL, 0) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, NULL, 0) == INPUT_NONE);
     input_decoder_init(&decoder);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"H", 1) == INPUT_HELP);
+    assert(input_decoder_timeout(&decoder) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"L", 1) == INPUT_LIST);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)" ", 1) == INPUT_SPACE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"\t", 1) == INPUT_TAB);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"\n", 1) == INPUT_ENTER);
+    input_decoder_init(&decoder);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"HLQ", 3) == INPUT_HELP);
+    assert(input_decoder_next(&decoder) == INPUT_LIST);
+    assert(input_decoder_next(&decoder) == INPUT_QUIT);
+    assert(input_decoder_next(&decoder) == INPUT_NONE);
+    input_decoder_init(&decoder);
+    {
+        const unsigned char negotiation_and_key[] = {0xff, 0xfb, 1, 'Q'};
+        assert(input_decoder_feed(&decoder, negotiation_and_key,
+                                  sizeof(negotiation_and_key)) == INPUT_QUIT);
+    }
+    input_decoder_init(&decoder);
     assert(input_decoder_feed(&decoder, up, 1) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, up + 1, 1) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, up + 2, 1) == INPUT_UP);
@@ -208,8 +226,8 @@ static void test_input(void) {
     assert(input_decoder_timeout(&decoder) == INPUT_ESCAPE);
     input_decoder_init(&decoder);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"\033[99", 5) == INPUT_NONE);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"~q", 2) == INPUT_NONE);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"q", 1) == INPUT_QUIT);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"~q", 2) == INPUT_QUIT);
+    assert(input_decoder_next(&decoder) == INPUT_NONE);
 }
 
 static void test_runtime(void) {
@@ -267,11 +285,15 @@ static void test_final_binary(void) {
     pid_t child;
     int status;
     char path[128];
+    char debug_path[128];
     char buffer[4096];
+    char log[8192];
     ssize_t length;
     FILE *file;
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
     snprintf(path, sizeof(path), "/tmp/ansiradar-door-exec-%ld", (long)getpid());
+    snprintf(debug_path, sizeof(debug_path), "/tmp/ansiradar-door-log-%ld", (long)getpid());
+    unlink(debug_path);
     file = fopen(path, "wb");
     assert(file != NULL);
     fprintf(file, "2\n%d\n57600\nBBS\n42\nName\nAlias\n10\n2\n1\n1\n", pair[1]);
@@ -282,16 +304,28 @@ static void test_final_binary(void) {
         close(pair[0]);
         execl(door_binary, door_binary, "--door32", path, "--file",
               "fixtures80/readsb.json", "--receiver-lat", "58.3405",
-              "--receiver-lon", "6.2812", "--color", "never", (char *)NULL);
+              "--receiver-lon", "6.2812", "--color", "never", "--debug-log",
+              debug_path, (char *)NULL);
         _exit(127);
     }
     close(pair[1]);
     length = read(pair[0], buffer, sizeof(buffer));
     assert(length > 0 && contains_bytes(buffer, (size_t)length, "\033[2J"));
-    assert(write(pair[0], "q", 1) == 1);
+    assert(write(pair[0], "HQ", 2) == 2);
     assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    file = fopen(debug_path, "rb");
+    assert(file != NULL);
+    length = (ssize_t)fread(log, 1, sizeof(log) - 1, file);
+    fclose(file);
+    assert(length > 0);
+    log[length] = '\0';
+    assert(strstr(log, "decoded='h'") != NULL);
+    assert(strstr(log, "action: help") != NULL);
+    assert(strstr(log, "action: quit") != NULL);
+    assert(strstr(log, "action: help") < strstr(log, "action: quit"));
     close(pair[0]);
     unlink(path);
+    unlink(debug_path);
 }
 
 int main(int argc, char **argv) {
