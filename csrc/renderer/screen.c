@@ -25,11 +25,14 @@ void screen_put(Screen *screen, int x, int y, unsigned char ch, unsigned char at
 
 void screen_text(Screen *screen, int x, int y, const char *text, unsigned char attr) {
     int offset = 0;
+    unsigned char character;
     if (text == NULL) {
         return;
     }
     while (text[offset] != '\0') {
-        screen_put(screen, x + offset, y, (unsigned char)text[offset], attr);
+        character = (unsigned char)text[offset];
+        if (character < 32 || character == 127) character = '?';
+        screen_put(screen, x + offset, y, character, attr);
         ++offset;
     }
 }

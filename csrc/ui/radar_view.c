@@ -1,17 +1,15 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "ansiradar80/app.h"
 #include "ansiradar80/ansi.h"
 #include "ansiradar80/input.h"
 #include "ansiradar80/radar.h"
 #include "ansiradar80/ui.h"
 
-#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/select.h>
-#include <sys/time.h>
-#include <termios.h>
 #include <time.h>
-#include <unistd.h>
 
 static void utc_now(char *output, size_t size) {
     time_t now = time(NULL);
@@ -23,10 +21,10 @@ static void utc_now(char *output, size_t size) {
     strftime(output, size, "%H:%M:%S", value);
 }
 
-static double elapsed_seconds(void) {
-    struct timeval value;
-    if (gettimeofday(&value, NULL) != 0) return 0.0;
-    return (double)value.tv_sec + (double)value.tv_usec / 1000000.0;
+static double monotonic_seconds(void) {
+    struct timespec value;
+    if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) return 0.0;
+    return (double)value.tv_sec + (double)value.tv_nsec / 1000000000.0;
 }
 
 static void overlay_box(Screen *screen, int x, int y, int width, int height) {
@@ -87,27 +85,36 @@ void ui_draw_details(Screen *screen, const AircraftList *list, const RadarState 
     screen_text(screen, 28, 17, "ESC closes", 15);
 }
 
-static int read_key(int fd, InputDecoder *decoder, double timeout) {
+static int read_key(DoorTransport *transport, InputDecoder *decoder, int timeout_ms) {
     unsigned char bytes[64];
-    fd_set read_set;
-    struct timeval wait;
-    int result;
-    result = input_decoder_feed(decoder, NULL, 0);
-    if (result != INPUT_NONE) return result;
-    FD_ZERO(&read_set);
-    FD_SET(fd, &read_set);
-    wait.tv_sec = (long)timeout;
-    wait.tv_usec = (long)((timeout - (double)wait.tv_sec) * 1000000.0);
-    result = select(fd + 1, &read_set, NULL, NULL, &wait);
-    if (result <= 0) {
-        return input_decoder_timeout(decoder);
-    }
-    result = (int)read(fd, bytes, sizeof(bytes));
-    if (result <= 0) return INPUT_QUIT;
-    return input_decoder_feed(decoder, bytes, (size_t)result);
+    size_t length = 0;
+    TransportResult result;
+    int key;
+    key = input_decoder_feed(decoder, NULL, 0);
+    if (key != INPUT_NONE) return key;
+    result = transport_read(transport, bytes, sizeof(bytes), &length, timeout_ms);
+    if (result == TRANSPORT_TIMEOUT) return input_decoder_timeout(decoder);
+    if (result != TRANSPORT_OK) return INPUT_DISCONNECT;
+    return input_decoder_feed(decoder, bytes, length);
 }
 
-int app_run(const AppConfig *config, Provider *provider) {
+static volatile sig_atomic_t stop_requested;
+
+static void on_signal(int signal_number) {
+    (void)signal_number;
+    stop_requested = 1;
+}
+
+static void debug_event(const AppConfig *config, const char *event) {
+    FILE *file;
+    if (config == NULL || config->debug_log_path == NULL) return;
+    file = fopen(config->debug_log_path, "a");
+    if (file == NULL) return;
+    fprintf(file, "%.0f %.*s\n", monotonic_seconds(), 80, event);
+    fclose(file);
+}
+
+int app_run(const AppConfig *config, Provider *provider, DoorTransport *transport) {
     Screen current;
     Screen previous;
     AircraftList aircraft;
@@ -119,13 +126,20 @@ int app_run(const AppConfig *config, Provider *provider) {
     int has_previous = 0;
     int details = 0;
     int help = 0;
+    int paused = 0;
     int running = 1;
-    struct termios original;
-    int raw_terminal = 0;
     double next_poll = 0.0;
     double now;
     int have_good = 0;
-    if (config == NULL || provider == NULL) return 2;
+    double deadline = 0.0;
+    int exit_code = 0;
+    int disconnected = 0;
+    void (*old_int)(int);
+    void (*old_term)(int);
+#ifdef SIGHUP
+    void (*old_hup)(int);
+#endif
+    if (config == NULL || provider == NULL || transport == NULL) return 2;
     memset(&state, 0, sizeof(state));
     state.receiver_latitude = config->receiver_latitude;
     state.receiver_longitude = config->receiver_longitude;
@@ -133,24 +147,29 @@ int app_run(const AppConfig *config, Provider *provider) {
     state.show_ground = 1;
     aircraft_list_clear(&aircraft);
     input_decoder_init(&decoder);
-    if (config->once) {
-        if (!provider->poll(provider, &aircraft, error, sizeof(error))) return 3;
-        have_good = 1;
-    } else if (isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &original) == 0) {
-        struct termios raw = original;
-        raw.c_lflag &= (tcflag_t)~(ICANON | ECHO);
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 1;
-        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
-        raw_terminal = 1;
+    if (!provider->poll(provider, &aircraft, error, sizeof(error))) return 13;
+    have_good = 1;
+    if (config->door_mode) {
+        if (config->time_left_minutes <= 0) return 15;
+        deadline = monotonic_seconds() + (double)config->time_left_minutes * 60.0 - 7.0;
     }
+    stop_requested = 0;
+    old_int = signal(SIGINT, on_signal);
+    old_term = signal(SIGTERM, on_signal);
+#ifdef SIGHUP
+    old_hup = signal(SIGHUP, on_signal);
+#endif
     memset(state.source_status, 0, sizeof(state.source_status));
     snprintf(state.source_status, sizeof(state.source_status), "%s",
              have_good ? "OK" : "NO DATA");
     state.charset = config->charset;
     while (running) {
-        now = elapsed_seconds();
-        if (!config->once && now >= next_poll) {
+        now = monotonic_seconds();
+        if (stop_requested || (deadline > 0.0 && now >= deadline)) {
+            if (deadline > 0.0 && now >= deadline) exit_code = 15;
+            break;
+        }
+        if (!config->once && !paused && now >= next_poll) {
             AircraftList candidate;
             if (provider->poll(provider, &candidate, error, sizeof(error))) {
                 aircraft = candidate;
@@ -162,44 +181,79 @@ int app_run(const AppConfig *config, Provider *provider) {
             }
             next_poll = now + (config->refresh_seconds > 0.0 ? config->refresh_seconds : 2.0);
         }
+        if (deadline > 0.0 && deadline - now <= 60.0) {
+            snprintf(state.source_status, sizeof(state.source_status), "TIME LEFT");
+        }
         utc_now(utc, sizeof(utc));
         radar_render(&current, &aircraft, &state, utc);
         if (details) ui_draw_details(&current, &aircraft, &state);
         if (help) ui_draw_help(&current);
         if (config->once) {
             int length = ansi_full(&current, output, sizeof(output), config->color);
-            if (length > 0) fwrite(output, 1, (size_t)length, stdout);
+            if (length > 0) transport_write(transport, (const unsigned char *)output, (size_t)length);
             running = 0;
         } else {
             int length = has_previous ? ansi_diff(&current, &previous, output, sizeof(output), config->color)
                                       : ansi_full(&current, output, sizeof(output), config->color);
-            if (length > 0) fwrite(output, 1, (size_t)length, stdout);
-            fflush(stdout);
+            if (length > 0 && transport_write(transport, (const unsigned char *)output, (size_t)length) != TRANSPORT_OK) {
+                debug_event(config, "write_error");
+                disconnected = 1;
+                exit_code = 14;
+                break;
+            }
             previous = current;
             has_previous = 1;
-            switch (read_key(STDIN_FILENO, &decoder, 0.10)) {
+            {
+                int key = read_key(transport, &decoder, 100);
+                if (key != INPUT_NONE) {
+                    char key_event[32];
+                    snprintf(key_event, sizeof(key_event), "key=%d", key);
+                    debug_event(config, key_event);
+                }
+                switch (key) {
                 case INPUT_QUIT: running = 0; break;
+                case INPUT_DISCONNECT: debug_event(config, "read_eof"); disconnected = 1; exit_code = 14; running = 0; break;
                 case INPUT_UP: if (state.selected > 0) --state.selected; break;
                 case INPUT_DOWN: if (state.selected + 1 < aircraft.count) ++state.selected; break;
+                case INPUT_J: if (state.selected + 1 < aircraft.count) ++state.selected; break;
+                case INPUT_K: if (state.selected > 0) --state.selected; break;
                 case INPUT_PLUS: state.range_nm = state.range_nm > 5.0 ? state.range_nm / 2.0 : 5.0; break;
                 case INPUT_MINUS: state.range_nm = state.range_nm < 500.0 ? state.range_nm * 2.0 : 500.0; break;
                 case INPUT_TAB: state.sort_mode = (state.sort_mode + 1) % 3; break;
                 case INPUT_SPACE: break; /* radar is always centered on receiver */
                 case INPUT_LIST: state.list_mode = !state.list_mode; break;
                 case INPUT_HELP: help = !help; break;
+                case INPUT_QUESTION: help = !help; break;
                 case INPUT_ENTER: details = 1; break;
                 case INPUT_ESCAPE: details = 0; help = 0; break;
+                case INPUT_G: state.show_ground = !state.show_ground; break;
+                case INPUT_S: state.sort_mode = (state.sort_mode + 1) % 3; break;
+                case INPUT_P: paused = !paused; break;
+                case INPUT_R: next_poll = 0.0; break;
                 case 101: state.range_nm = 25.0; break;
                 case 102: state.range_nm = 50.0; break;
                 case 103: state.range_nm = 100.0; break;
                 case 104: state.range_nm = 200.0; break;
                 default: break;
+                }
             }
         }
     }
-    if (raw_terminal) tcsetattr(STDIN_FILENO, TCSANOW, &original);
+    if (disconnected) {
+        signal(SIGINT, old_int);
+        signal(SIGTERM, old_term);
+#ifdef SIGHUP
+        signal(SIGHUP, old_hup);
+#endif
+        return exit_code;
+    }
     ansi_stop(output, sizeof(output));
-    fwrite(output, 1, strlen(output), stdout);
-    fflush(stdout);
-    return 0;
+    if (transport_connected(transport)) transport_write(transport, (const unsigned char *)output, strlen(output));
+    signal(SIGINT, old_int);
+    signal(SIGTERM, old_term);
+#ifdef SIGHUP
+    signal(SIGHUP, old_hup);
+#endif
+    if (deadline > 0.0 && monotonic_seconds() >= deadline) return 15;
+    return exit_code;
 }

@@ -21,6 +21,7 @@ https://github.com/pgousdal/ANSIRadar
 - Deterministic `--once` rendering
 - Local readsb/dump1090-compatible JSON input
 - CSV replay and fixture-oriented test coverage
+- Native Mystic BBS Linux support through DOOR32.SYS type 2 descriptor/socket mode
 
 ## Build
 
@@ -83,13 +84,15 @@ Use `./ansiradar80 --help` for all options. Receiver coordinates and `--file` ar
 
 ## BBS Use
 
-ANSIRadar-C is intended for classic ANSI/CP437 BBS terminals and native deployments where a small local C program is preferred. Direct Mystic DOOR32 integration is not implemented in this C edition. A terminal or door wrapper can invoke the executable and provide a local snapshot file.
+ANSIRadar-C supports Mystic BBS on Linux through DOOR32.SYS communication type 2 descriptor/socket mode. See [docs/mystic-door.md](docs/mystic-door.md) and `examples/mystic`.
+
+Stable exit codes are 0 (normal quit), 2 (CLI/configuration), 10 (invalid DOOR32), 11 (unsupported communication mode), 12 (invalid socket), 13 (source startup), 14 (remote disconnect), 15 (time expired), and 16 (internal runtime/transport error).
 
 ## Relationship to ANSIRadar
 
 ANSIRadar-C is the standalone C99 edition.
 
-The Python edition, including the Mystic DOOR32 runtime and broader source/replay tooling, lives in:
+The Python edition and broader source/replay tooling lives in:
 https://github.com/pgousdal/ANSIRadar
 
 ## Repository Metadata

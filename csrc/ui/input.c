@@ -31,7 +31,7 @@ static int parse_key(InputDecoder *decoder) {
                     return INPUT_NONE;
                 }
             }
-            if (decoder->length > 256) decoder->length = 0;
+            if (decoder->length >= sizeof(decoder->bytes)) decoder->length = 0;
             return INPUT_NONE;
         }
         if (decoder->bytes[1] >= 251 && decoder->bytes[1] <= 254 && decoder->length < 3) {
@@ -56,6 +56,8 @@ static int parse_key(InputDecoder *decoder) {
     }
     drop_bytes(decoder, 1);
     if (value == 'q' || value == 'Q') return INPUT_QUIT;
+    if (value == 'j' || value == 'J') return INPUT_J;
+    if (value == 'k' || value == 'K') return INPUT_K;
     if (value == '+') return INPUT_PLUS;
     if (value == '-') return INPUT_MINUS;
     if (value == '\t') return INPUT_TAB;
@@ -63,6 +65,11 @@ static int parse_key(InputDecoder *decoder) {
     if (value == '\r' || value == '\n') return INPUT_ENTER;
     if (value == 'l' || value == 'L') return INPUT_LIST;
     if (value == 'h' || value == 'H') return INPUT_HELP;
+    if (value == 'g' || value == 'G') return INPUT_G;
+    if (value == 's' || value == 'S') return INPUT_S;
+    if (value == 'p' || value == 'P') return INPUT_P;
+    if (value == 'r' || value == 'R') return INPUT_R;
+    if (value == '?') return INPUT_QUESTION;
     if (value == '1') return INPUT_NONE + 101;
     if (value == '2') return INPUT_NONE + 102;
     if (value == '3') return INPUT_NONE + 103;

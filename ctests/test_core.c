@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
     result = ansi_diff(&second, &first, output, sizeof(output), 0);
     assert(result > 0 && strchr(output, 'J') != NULL);
     input_decoder_init(&decoder);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"j", 1) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"j", 1) == INPUT_J);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"\033[", 2) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"A", 1) == INPUT_UP);
     input_decoder_init(&decoder);
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
     assert(input_decoder_feed(&decoder, (const unsigned char *)"[", 1) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"A", 1) == INPUT_UP);
     input_decoder_init(&decoder);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"jp1", 3) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"xx1", 3) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, NULL, 0) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, NULL, 0) == 101);
     input_decoder_init(&decoder);

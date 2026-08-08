@@ -2,6 +2,7 @@
 #define ANSIRADAR80_APP_H
 
 #include "provider.h"
+#include "transport.h"
 
 typedef struct {
     const char *source_kind;
@@ -15,8 +16,12 @@ typedef struct {
     int height;
     int charset;
     double refresh_seconds;
+    const char *debug_log_path;
+    const char *door32_path;
+    int door_mode;
+    int time_left_minutes;
 } AppConfig;
 
-int app_run(const AppConfig *config, Provider *provider);
+int app_run(const AppConfig *config, Provider *provider, DoorTransport *transport);
 
 #endif

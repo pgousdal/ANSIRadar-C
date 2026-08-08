@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- Added native Linux Mystic DOOR32.SYS type 2 descriptor/socket runtime.
+- Added shared local/socket transports, bounded input decoding, time-left handling, and socketpair tests.
+
 ## 0.1.0
 
 - Established the standalone C edition extracted from ANSIRadar.

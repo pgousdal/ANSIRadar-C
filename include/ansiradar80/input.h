@@ -18,10 +18,18 @@ enum InputKey {
     INPUT_ESCAPE,
     INPUT_LIST,
     INPUT_HELP,
+    INPUT_J,
+    INPUT_K,
+    INPUT_DISCONNECT,
+    INPUT_G,
+    INPUT_S,
+    INPUT_P,
+    INPUT_R,
+    INPUT_QUESTION,
 };
 
 typedef struct {
-    unsigned char bytes[16];
+    unsigned char bytes[64];
     size_t length;
     unsigned int idle_ticks;
 } InputDecoder;

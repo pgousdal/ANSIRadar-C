@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ANSIRadar-C VERSION 0.1.0 LANGUAGES C)
+project(ANSIRadar-C VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -13,6 +13,8 @@ add_library(ansiradar80_core
     csrc/renderer/radar.c
     csrc/renderer/screen.c
     csrc/ui/input.c
+    csrc/core/door32.c
+    csrc/core/transport.c
 )
 target_include_directories(ansiradar80_core PUBLIC include)
 target_compile_options(ansiradar80_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -33,6 +35,13 @@ target_compile_options(ansiradar80_test PRIVATE -Wall -Wextra -Wpedantic)
 target_link_libraries(ansiradar80_test PRIVATE ansiradar80_core m)
 add_test(NAME ansiradar80_core COMMAND ansiradar80_test
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures80/readsb.json)
+
+add_executable(ansiradar80_door_test ctests/test_door.c csrc/ui/radar_view.c)
+target_include_directories(ansiradar80_door_test PRIVATE include)
+target_compile_options(ansiradar80_door_test PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(ansiradar80_door_test PRIVATE ansiradar80_core m)
+add_test(NAME ansiradar80_door COMMAND ansiradar80_door_test)
+set_tests_properties(ansiradar80_door PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 install(TARGETS ansiradar80 RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
