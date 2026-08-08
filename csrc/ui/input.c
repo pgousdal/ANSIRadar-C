@@ -19,12 +19,12 @@ void input_decoder_init(InputDecoder *decoder) {
 
 static int parse_key(InputDecoder *decoder) {
     unsigned char value;
+    size_t i;
     if (decoder->length == 0) return INPUT_NONE;
     value = decoder->bytes[0];
     if (value == 0xff) {
         if (decoder->length < 2) return INPUT_NONE;
         if (decoder->bytes[1] == 0xfa) {
-            size_t i;
             for (i = 2; i + 1 < decoder->length; ++i) {
                 if (decoder->bytes[i] == 0xff && decoder->bytes[i + 1] == 0xf0) {
                     drop_bytes(decoder, i + 2);
@@ -46,13 +46,17 @@ static int parse_key(InputDecoder *decoder) {
             drop_bytes(decoder, 1);
             return INPUT_ESCAPE;
         }
-        if (decoder->length < 3) return INPUT_NONE;
-        if (decoder->bytes[2] == 'A') { drop_bytes(decoder, 3); return INPUT_UP; }
-        if (decoder->bytes[2] == 'B') { drop_bytes(decoder, 3); return INPUT_DOWN; }
-        if (decoder->bytes[2] == 'C') { drop_bytes(decoder, 3); return INPUT_RIGHT; }
-        if (decoder->bytes[2] == 'D') { drop_bytes(decoder, 3); return INPUT_LEFT; }
-        drop_bytes(decoder, 1);
-        return INPUT_ESCAPE;
+        for (i = 2; i < decoder->length; ++i) {
+            unsigned char final = decoder->bytes[i];
+            if (final < 0x40 || final > 0x7e) continue;
+            if (i == 2 && final == 'A') { drop_bytes(decoder, 3); return INPUT_UP; }
+            if (i == 2 && final == 'B') { drop_bytes(decoder, 3); return INPUT_DOWN; }
+            if (i == 2 && final == 'C') { drop_bytes(decoder, 3); return INPUT_RIGHT; }
+            if (i == 2 && final == 'D') { drop_bytes(decoder, 3); return INPUT_LEFT; }
+            drop_bytes(decoder, i + 1);
+            return INPUT_NONE;
+        }
+        return INPUT_NONE;
     }
     drop_bytes(decoder, 1);
     if (value == 'q' || value == 'Q') return INPUT_QUIT;

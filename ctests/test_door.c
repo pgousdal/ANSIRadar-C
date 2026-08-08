@@ -115,11 +115,31 @@ static void test_transport(void) {
 
 static void test_input(void) {
     InputDecoder decoder;
+    const unsigned char up[] = {27, '[', 'A'};
+    const unsigned char down[] = {27, '[', 'B'};
+    const unsigned char left[] = {27, '[', 'D'};
+    const unsigned char right[] = {27, '[', 'C'};
     input_decoder_init(&decoder);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"j", 1) == INPUT_J);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"k", 1) == INPUT_K);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"\033[", 2) == INPUT_NONE);
-    assert(input_decoder_feed(&decoder, (const unsigned char *)"B", 1) == INPUT_DOWN);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"q", 1) == INPUT_QUIT);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"l", 1) == INPUT_LIST);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"h", 1) == INPUT_HELP);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"\t", 1) == INPUT_TAB);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)" ", 1) == INPUT_SPACE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"\r", 1) == INPUT_ENTER);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"abc", 3) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, NULL, 0) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, NULL, 0) == INPUT_NONE);
+    input_decoder_init(&decoder);
+    assert(input_decoder_feed(&decoder, up, 1) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, up + 1, 1) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, up + 2, 1) == INPUT_UP);
+    assert(input_decoder_feed(&decoder, down, sizeof(down)) == INPUT_DOWN);
+    assert(input_decoder_feed(&decoder, left, sizeof(left)) == INPUT_LEFT);
+    assert(input_decoder_feed(&decoder, right, sizeof(right)) == INPUT_RIGHT);
+    input_decoder_init(&decoder);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"\033", 1) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"[", 1) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"A", 1) == INPUT_UP);
     input_decoder_init(&decoder);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"\xff\xfb", 2) == INPUT_NONE);
     assert(input_decoder_feed(&decoder, (const unsigned char *)"\001", 1) == INPUT_NONE);
@@ -128,6 +148,10 @@ static void test_input(void) {
     assert(input_decoder_feed(&decoder, (const unsigned char *)"\033", 1) == INPUT_NONE);
     assert(input_decoder_timeout(&decoder) == INPUT_NONE);
     assert(input_decoder_timeout(&decoder) == INPUT_ESCAPE);
+    input_decoder_init(&decoder);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"\033[99", 5) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"~q", 2) == INPUT_NONE);
+    assert(input_decoder_feed(&decoder, (const unsigned char *)"q", 1) == INPUT_QUIT);
 }
 
 static void test_runtime(void) {

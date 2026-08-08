@@ -21,6 +21,8 @@ static void utc_now(char *output, size_t size) {
     strftime(output, size, "%H:%M:%S", value);
 }
 
+static void debug_event(const AppConfig *config, const char *event);
+
 static double monotonic_seconds(void) {
     struct timespec value;
     if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) return 0.0;
@@ -85,17 +87,84 @@ void ui_draw_details(Screen *screen, const AircraftList *list, const RadarState 
     screen_text(screen, 28, 17, "ESC closes", 15);
 }
 
-static int read_key(DoorTransport *transport, InputDecoder *decoder, int timeout_ms) {
+static const char *key_name(int key) {
+    switch (key) {
+    case INPUT_QUIT: return "q";
+    case INPUT_UP: return "UP";
+    case INPUT_DOWN: return "DOWN";
+    case INPUT_LEFT: return "LEFT";
+    case INPUT_RIGHT: return "RIGHT";
+    case INPUT_TAB: return "TAB";
+    case INPUT_SPACE: return "SPACE";
+    case INPUT_ENTER: return "ENTER";
+    case INPUT_LIST: return "l";
+    case INPUT_HELP: return "h";
+    case INPUT_ESCAPE: return "ESC";
+    case INPUT_DISCONNECT: return "DISCONNECT";
+    default: return "UNKNOWN";
+    }
+}
+
+static const char *action_name(int key) {
+    switch (key) {
+    case INPUT_QUIT: return "quit";
+    case INPUT_UP: case INPUT_DOWN: case INPUT_LEFT: case INPUT_RIGHT: return "select";
+    case INPUT_TAB: return "sort";
+    case INPUT_SPACE: return "center";
+    case INPUT_ENTER: return "details";
+    case INPUT_LIST: return "list";
+    case INPUT_HELP: return "help";
+    default: return "none";
+    }
+}
+
+static void debug_bytes(const AppConfig *config, const unsigned char *bytes, size_t length) {
+    char line[256];
+    size_t offset = 0;
+    size_t i;
+    if (config == NULL || config->debug_log_path == NULL) return;
+    offset += (size_t)snprintf(line + offset, sizeof(line) - offset, "raw:");
+    for (i = 0; i < length && offset + 4 < sizeof(line); ++i)
+        offset += (size_t)snprintf(line + offset, sizeof(line) - offset, " %02x", bytes[i]);
+    debug_event(config, line);
+}
+
+static int read_key(const AppConfig *config, DoorTransport *transport, InputDecoder *decoder,
+                    int timeout_ms) {
     unsigned char bytes[64];
     size_t length = 0;
     TransportResult result;
     int key;
     key = input_decoder_feed(decoder, NULL, 0);
     if (key != INPUT_NONE) return key;
+    debug_event(config, "waiting_for_input");
     result = transport_read(transport, bytes, sizeof(bytes), &length, timeout_ms);
-    if (result == TRANSPORT_TIMEOUT) return input_decoder_timeout(decoder);
-    if (result != TRANSPORT_OK) return INPUT_DISCONNECT;
-    return input_decoder_feed(decoder, bytes, length);
+    if (result == TRANSPORT_TIMEOUT) {
+        key = input_decoder_timeout(decoder);
+        if (key != INPUT_NONE) {
+            char event[64];
+            snprintf(event, sizeof(event), "decoded_key: %s", key_name(key));
+            debug_event(config, event);
+        }
+        return key;
+    }
+    if (result != TRANSPORT_OK) {
+        debug_event(config, result == TRANSPORT_DISCONNECTED ? "recv: disconnected" : "recv: error");
+        return INPUT_DISCONNECT;
+    }
+    {
+        char event[64];
+        snprintf(event, sizeof(event), "recv: %lu bytes", (unsigned long)length);
+        debug_event(config, event);
+    }
+    debug_bytes(config, bytes, length);
+    key = input_decoder_feed(decoder, bytes, length);
+    if (key != INPUT_NONE) {
+        char event[64];
+        snprintf(event, sizeof(event), "decoded_key: %s", key_name(key));
+        debug_event(config, event);
+    }
+    return key;
 }
 
 static volatile sig_atomic_t stop_requested;
@@ -148,6 +217,7 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
     aircraft_list_clear(&aircraft);
     input_decoder_init(&decoder);
     if (!provider->poll(provider, &aircraft, error, sizeof(error))) return 13;
+    debug_event(config, transport->is_socket ? "socket opened" : "terminal opened");
     have_good = 1;
     if (config->door_mode) {
         if (config->time_left_minutes <= 0) return 15;
@@ -204,10 +274,10 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
             previous = current;
             has_previous = 1;
             {
-                int key = read_key(transport, &decoder, 100);
+                int key = read_key(config, transport, &decoder, 100);
                 if (key != INPUT_NONE) {
                     char key_event[32];
-                    snprintf(key_event, sizeof(key_event), "key=%d", key);
+                    snprintf(key_event, sizeof(key_event), "action: %s", action_name(key));
                     debug_event(config, key_event);
                 }
                 switch (key) {
