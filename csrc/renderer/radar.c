@@ -179,7 +179,7 @@ void radar_render(Screen *screen, const AircraftList *aircraft,
     if (screen == NULL || aircraft == NULL || state == NULL) return;
     profile = char_profile(state->charset);
     screen_clear(screen, ' ', 0);
-    snprintf(top, sizeof(top), "ANSIRadar 80        Range:%3.0fnm      Aircraft:%-3lu      UTC:%s",
+    snprintf(top, sizeof(top), "ANSIRadar-C 80      Range:%3.0fnm      Aircraft:%-3lu      UTC:%s",
              state->range_nm, (unsigned long)aircraft->count,
              utc_text != NULL ? utc_text : "--:--:--");
     screen_text(screen, 0, 0, top, 15);

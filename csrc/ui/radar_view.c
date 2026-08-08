@@ -44,7 +44,7 @@ static void overlay_box(Screen *screen, int x, int y, int width, int height) {
 
 void ui_draw_help(Screen *screen) {
     overlay_box(screen, 10, 4, 60, 15);
-    screen_text(screen, 26, 5, "ANSIRadar 80 controls", 15);
+    screen_text(screen, 25, 5, "ANSIRadar-C controls", 15);
     screen_text(screen, 14, 7, "Arrows select   +/- zoom   Tab sort", 7);
     screen_text(screen, 14, 8, "Space center   Enter details   L list", 7);
     screen_text(screen, 14, 9, "H help         Esc closes popup", 7);

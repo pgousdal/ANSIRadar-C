@@ -1,4 +1,5 @@
 #include "ansiradar80/app.h"
+#include "ansiradar80/version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +18,7 @@ static void usage(const char *program) {
     puts("  --refresh SECONDS        source refresh interval (default 2)");
     puts("  --width 80 --height 25   classic BBS dimensions");
     puts("  --help                   show this help");
+    puts("  --version                show project version");
 }
 
 int main(int argc, char **argv) {
@@ -36,6 +38,9 @@ int main(int argc, char **argv) {
     for (i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0) {
             usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "--version") == 0) {
+            puts(ANSIRADAR_VERSION);
             return 0;
         } else if (strcmp(argv[i], "--once") == 0) {
             config.once = 1;

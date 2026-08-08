@@ -1,0 +1,6 @@
+#ifndef ANSIRADAR80_VERSION_H
+#define ANSIRADAR80_VERSION_H
+
+#define ANSIRADAR_VERSION "0.1.0"
+
+#endif

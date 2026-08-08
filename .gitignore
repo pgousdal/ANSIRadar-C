@@ -1,0 +1,9 @@
+build/
+/ansiradar80
+/ansiradar80-test
+*.o
+*.a
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Testing/
