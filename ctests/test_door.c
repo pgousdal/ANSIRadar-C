@@ -6,7 +6,9 @@
 #include "ansiradar80/transport.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -111,6 +113,62 @@ static void test_transport(void) {
     transport_close(&transport);
     assert(fcntl(pair[0], F_GETFL, 0) == flags);
     close(pair[0]);
+}
+
+static void test_shared_socket_reader_race(void) {
+    int pair[2];
+    int controls[2][2];
+    int results[2][2];
+    pid_t children[2];
+    int reader;
+    unsigned char signal_byte;
+    unsigned char result;
+    unsigned char buffer[1];
+    struct pollfd item;
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+    for (reader = 0; reader < 2; ++reader) {
+        assert(pipe(controls[reader]) == 0);
+        assert(pipe(results[reader]) == 0);
+        children[reader] = fork();
+        assert(children[reader] >= 0);
+        if (children[reader] == 0) {
+            ssize_t length;
+            close(pair[1]);
+            close(controls[reader][1]);
+            close(results[reader][0]);
+            item.fd = pair[0];
+            item.events = POLLIN;
+            item.revents = 0;
+            assert(poll(&item, 1, 1000) == 1 && (item.revents & POLLIN) != 0);
+            signal_byte = 'p';
+            assert(write(results[reader][1], &signal_byte, 1) == 1);
+            assert(read(controls[reader][0], &signal_byte, 1) == 1);
+            errno = 0;
+            length = recv(pair[0], buffer, sizeof(buffer), MSG_DONTWAIT);
+            if (length == 1 && buffer[0] == 'x') result = 1;
+            else if (length < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) result = 2;
+            else result = 3;
+            assert(write(results[reader][1], &result, 1) == 1);
+            _exit(0);
+        }
+        close(controls[reader][0]);
+        close(results[reader][1]);
+    }
+    close(pair[0]);
+    assert(write(pair[1], "x", 1) == 1);
+    for (reader = 0; reader < 2; ++reader)
+        assert(read(results[reader][0], &signal_byte, 1) == 1 && signal_byte == 'p');
+    assert(write(controls[0][1], "r", 1) == 1);
+    assert(read(results[0][0], &result, 1) == 1 && result == 1);
+    assert(write(controls[1][1], "r", 1) == 1);
+    assert(read(results[1][0], &result, 1) == 1 && result == 2);
+    for (reader = 0; reader < 2; ++reader) {
+        int status;
+        close(controls[reader][1]);
+        close(results[reader][0]);
+        assert(waitpid(children[reader], &status, 0) == children[reader]);
+    }
+    close(pair[1]);
 }
 
 static void test_input(void) {
@@ -247,6 +305,7 @@ int main(int argc, char **argv) {
     }
     test_doorfile();
     test_transport();
+    test_shared_socket_reader_race();
     test_input();
     test_runtime();
     test_final_binary();

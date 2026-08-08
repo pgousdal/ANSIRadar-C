@@ -30,6 +30,23 @@ The wrapper in `examples/mystic/ansiradar80-door.sh` is a starting point for a
 Mystic menu entry. Exact Mystic menu macros depend on the installed Mystic
 version and are intentionally not prescribed here.
 
+## Descriptor ownership
+
+Communication type 2 passes an already-connected socket descriptor to the
+door. The door must be the only process reading that socket while it runs.
+`dup()` creates another descriptor for the same socket/open file description; it
+does not create a second receive queue. The door leaves Mystic's descriptor
+unchanged, reads through its duplicate with per-call `MSG_DONTWAIT`, and closes
+only the duplicate on exit.
+
+The example wrapper uses `exec`, so the shell is replaced and cannot remain as
+a competing reader. A `poll()` result can still be followed by `EAGAIN` if
+another process or thread has read the shared socket between `poll()` and
+`recv()`. The native test suite reproduces this with two forked readers. In a
+Mystic installation, inspect the exact door invocation and process tree if
+debug logs show `recv: EAGAIN after poll`; do not enable `O_NONBLOCK` globally
+on the inherited descriptor as a workaround.
+
 ## Testing
 
 Test the installed executable first with `--version` and `--help`, then use

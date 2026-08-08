@@ -44,7 +44,7 @@ TransportResult transport_read(DoorTransport *transport, unsigned char *buffer,
         return TRANSPORT_OK;
     }
     if (result == 0) return TRANSPORT_DISCONNECTED;
-    if (errno == EAGAIN || errno == EWOULDBLOCK) return TRANSPORT_TIMEOUT;
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return TRANSPORT_WOULD_BLOCK;
     if (errno == ECONNRESET || errno == ENOTCONN || errno == ECONNABORTED || errno == ESHUTDOWN)
         return TRANSPORT_DISCONNECTED;
     return TRANSPORT_ERROR;

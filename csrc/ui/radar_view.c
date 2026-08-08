@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 static void utc_now(char *output, size_t size) {
     time_t now = time(NULL);
@@ -148,6 +149,10 @@ static int read_key(const AppConfig *config, DoorTransport *transport, InputDeco
         }
         return key;
     }
+    if (result == TRANSPORT_WOULD_BLOCK) {
+        debug_event(config, "recv: EAGAIN after poll");
+        return input_decoder_timeout(decoder);
+    }
     if (result != TRANSPORT_OK) {
         debug_event(config, result == TRANSPORT_DISCONNECTED ? "recv: disconnected" : "recv: error");
         return INPUT_DISCONNECT;
@@ -179,7 +184,7 @@ static void debug_event(const AppConfig *config, const char *event) {
     if (config == NULL || config->debug_log_path == NULL) return;
     file = fopen(config->debug_log_path, "a");
     if (file == NULL) return;
-    fprintf(file, "%.0f %.*s\n", monotonic_seconds(), 80, event);
+    fprintf(file, "%.0f pid=%ld %.*s\n", monotonic_seconds(), (long)getpid(), 80, event);
     fclose(file);
 }
 

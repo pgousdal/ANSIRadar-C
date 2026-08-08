@@ -8,6 +8,7 @@ typedef struct DoorTransport DoorTransport;
 typedef enum {
     TRANSPORT_OK = 0,
     TRANSPORT_TIMEOUT,
+    TRANSPORT_WOULD_BLOCK,
     TRANSPORT_DISCONNECTED,
     TRANSPORT_ERROR
 } TransportResult;
