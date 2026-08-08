@@ -124,7 +124,7 @@ static void debug_bytes(const AppConfig *config, const unsigned char *bytes, siz
     size_t offset = 0;
     size_t i;
     if (config == NULL || config->debug_log_path == NULL) return;
-    offset += (size_t)snprintf(line + offset, sizeof(line) - offset, "raw:");
+    offset += (size_t)snprintf(line + offset, sizeof(line) - offset, "raw=");
     for (i = 0; i < length && offset + 4 < sizeof(line); ++i)
         offset += (size_t)snprintf(line + offset, sizeof(line) - offset, " %02x", bytes[i]);
     debug_event(config, line);
@@ -201,6 +201,7 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
     double deadline = 0.0;
     int exit_code = 0;
     int disconnected = 0;
+    int quit_requested = 0;
     unsigned long iteration = 0;
     void (*old_int)(int);
     void (*old_term)(int);
@@ -287,10 +288,10 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
                         snprintf(decoded_event, sizeof(decoded_event), "decoded='%s'", key_name(key));
                         debug_event(config, decoded_event);
                     }
-                    snprintf(key_event, sizeof(key_event), "action: %s", action_name(key));
+                    snprintf(key_event, sizeof(key_event), "action=%s", action_name(key));
                     debug_event(config, key_event);
                     switch (key) {
-                    case INPUT_QUIT: running = 0; break;
+                    case INPUT_QUIT: quit_requested = 1; running = 0; break;
                     case INPUT_DISCONNECT: debug_event(config, "read_eof"); disconnected = 1; exit_code = 14; running = 0; break;
                     case INPUT_UP: if (state.selected > 0) --state.selected; break;
                     case INPUT_DOWN: if (state.selected + 1 < aircraft.count) ++state.selected; break;
@@ -321,6 +322,7 @@ int app_run(const AppConfig *config, Provider *provider, DoorTransport *transpor
             }
         }
     }
+    if (quit_requested) debug_event(config, "loop_exit=quit");
     if (disconnected) {
         signal(SIGINT, old_int);
         signal(SIGTERM, old_term);

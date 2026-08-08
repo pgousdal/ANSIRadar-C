@@ -271,7 +271,7 @@ static void test_runtime(void) {
         length = read(pairs[session][0], buffer, sizeof(buffer));
         assert(length > 0);
         assert(contains_bytes(buffer, (size_t)length, "\033[2J"));
-        assert(write(pairs[session][0], "q", 1) == 1);
+        assert(write(pairs[session][0], session == 0 ? "q" : "Q", 1) == 1);
     }
     for (session = 0; session < 2; ++session) {
         int status;
@@ -311,7 +311,7 @@ static void test_final_binary(void) {
     close(pair[1]);
     length = read(pair[0], buffer, sizeof(buffer));
     assert(length > 0 && contains_bytes(buffer, (size_t)length, "\033[2J"));
-    assert(write(pair[0], "HQ", 2) == 2);
+    assert(write(pair[0], "q", 1) == 1);
     assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
     file = fopen(debug_path, "rb");
     assert(file != NULL);
@@ -319,10 +319,12 @@ static void test_final_binary(void) {
     fclose(file);
     assert(length > 0);
     log[length] = '\0';
-    assert(strstr(log, "decoded='h'") != NULL);
-    assert(strstr(log, "action: help") != NULL);
-    assert(strstr(log, "action: quit") != NULL);
-    assert(strstr(log, "action: help") < strstr(log, "action: quit"));
+    assert(strstr(log, "raw= 71") != NULL);
+    assert(strstr(log, "decoded='q'") != NULL);
+    assert(strstr(log, "action=quit") != NULL);
+    assert(strstr(log, "loop_exit=quit") != NULL);
+    assert(strstr(log, "action=quit") < strstr(log, "loop_exit=quit"));
+    assert(strstr(strstr(log, "action=quit"), "waiting_for_input") == NULL);
     close(pair[0]);
     unlink(path);
     unlink(debug_path);
